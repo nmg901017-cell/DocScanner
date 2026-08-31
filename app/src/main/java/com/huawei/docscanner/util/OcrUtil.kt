@@ -42,7 +42,7 @@ object OcrUtil {
 
                 baseApi.setImage(bitmap)
                 val text = baseApi.getUTF8Text().trim()
-                baseApi.end()
+                baseApi.recycle()
 
                 callback(text, text.isNotEmpty())
             } catch (e: Exception) {
