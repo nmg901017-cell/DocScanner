@@ -1,5 +1,13 @@
 # Add project specific ProGuard rules here.
-# Keep HMS ML Kit classes
--keep class com.huawei.hms.** { *; }
--keep class com.huawei.hianalytics.** { *; }
--keep class com.huawei.mlkit.** { *; }
+# Keep OpenCV classes
+-keep class org.opencv.** { *; }
+
+# Keep Tesseract classes
+-keep class com.googlecode.tesseract.** { *; }
+-keep class com.googlecode.leptonica.** { *; }
+-keep class cz.adaptech.tesseract4android.** { *; }
+
+# Keep native methods
+-keepclasseswithmembers class * {
+    native <methods>;
+}

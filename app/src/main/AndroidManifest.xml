@@ -13,6 +13,9 @@
         tools:ignore="ScopedStorage" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
 
+    <!-- Network for downloading OCR language data -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <uses-feature android:name="android.hardware.camera" android:screenOrientation="unspecified" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
 
@@ -34,10 +37,16 @@
             </intent-filter>
         </activity>
 
-        <!-- HMS ML Kit initialization -->
-        <meta-data
-            android:name="com.huawei.hms.mlkit.DEVICE_REGION"
-            android:value="cn" />
+        <!-- 相机全分辨率拍摄用的 FileProvider -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="com.huawei.docscanner.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
     </application>
 

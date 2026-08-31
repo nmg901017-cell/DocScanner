@@ -12,6 +12,9 @@ android {
         targetSdk 34
         versionCode 1
         versionName "1.0"
+        ndk {
+            abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
+        }
     }
 
     buildTypes {
@@ -25,14 +28,22 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging false
+        }
+    }
 }
 
 dependencies {
-    // Huawei HMS ML Kit - Document Scanner
-    implementation 'com.huawei.hms:mlkit-document-scanner:1.0.3.001'
+    // ===== 纯离线文档扫描方案 =====
 
-    // Huawei HMS ML Kit - Text Recognition (OCR)
-    implementation 'com.huawei.hms:mlkit-text-recognition:1.0.5.301'
+    // OpenCV - 文档边缘检测/透视矫正/图像增强 (Maven Central, 稳定)
+    implementation 'org.opencv:opencv:4.9.0'
+
+    // Tesseract4Android - 离线 OCR 文字识别 (JitPack)
+    implementation 'cz.adaptech.tesseract4android:tesseract4android:4.9.0'
 
     // AndroidX
     implementation 'androidx.appcompat:appcompat:1.6.1'
@@ -40,4 +51,6 @@ dependencies {
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
     implementation 'androidx.activity:activity:1.8.2'
     implementation 'androidx.lifecycle:lifecycle-runtime:2.7.0'
+    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'org.jetbrains.kotlin:kotlin-stdlib:1.9.22'
 }

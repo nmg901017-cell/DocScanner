@@ -2,12 +2,15 @@ package com.huawei.docscanner.ui
 
 import android.Manifest
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
+import android.provider.MediaStore
 import android.util.Log
 import android.view.View
 import android.widget.Button
@@ -19,13 +22,13 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import com.huawei.docscanner.R
 import com.huawei.docscanner.util.ImageUtil
 import com.huawei.docscanner.util.OcrUtil
+import com.huawei.docscanner.util.ScanProcessor
+import org.opencv.android.OpenCVLoader
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
 
@@ -37,41 +40,33 @@ class MainActivity : AppCompatActivity() {
     private lateinit var saveButton: Button
 
     private var currentBitmap: Bitmap? = null
-    private var currentPages: ArrayList<Bitmap>? = null
-
+    private var pendingPhotoUri: Uri? = null
     private val TAG = "DocScanner"
 
-    // Activity Result Launcher for document scanner
-    private val scannerLauncher: ActivityResultLauncher<Intent> = registerForActivityResult(
+    private val cameraLauncher: ActivityResultLauncher<Intent> = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
-            val resultData = result.data
-            if (resultData != null) {
-                // Get scanned pages
-                val pages = resultData.getParcelableArrayListExtra<Bitmap>("pages")
-                if (pages != null && pages.isNotEmpty()) {
-                    currentPages = pages
-                    currentBitmap = pages[0]
-                    imagePreview.setImageBitmap(currentBitmap)
-                    ocrButton.visibility = View.VISIBLE
-                    saveButton.visibility = View.VISIBLE
-                    resultText.text = "扫描成功，共 ${pages.size} 页\n点击识别文字获取内容"
-                    Log.d(TAG, "Scanned ${pages.size} pages")
+            val uri = pendingPhotoUri
+            if (uri != null) {
+                val bitmap = loadBitmapFromUri(uri)
+                if (bitmap != null) {
+                    processImage(bitmap)
+                } else {
+                    Toast.makeText(this, "图片加载失败", Toast.LENGTH_SHORT).show()
                 }
+            } else {
+                Toast.makeText(this, "未获取到图片", Toast.LENGTH_SHORT).show()
             }
-        } else {
-            Log.d(TAG, "Scanner cancelled or failed")
         }
     }
 
-    // Permission request launcher
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val cameraGranted = permissions[Manifest.permission.CAMERA] ?: false
         if (cameraGranted) {
-            launchScanner()
+            openCamera()
         } else {
             Toast.makeText(this, "需要相机权限才能扫描文档", Toast.LENGTH_SHORT).show()
         }
@@ -83,6 +78,11 @@ class MainActivity : AppCompatActivity() {
 
         initViews()
         setupListeners()
+
+        if (!OpenCVLoader.initDebug()) {
+            Log.e(TAG, "OpenCV 初始化失败")
+            Toast.makeText(this, "OpenCV 初始化失败", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun initViews() {
@@ -100,56 +100,89 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupListeners() {
         scanButton.setOnClickListener {
-            if (checkCameraPermission()) {
-                launchScanner()
+            if (hasCameraPermission()) {
+                openCamera()
             } else {
-                requestCameraPermission()
+                permissionLauncher.launch(arrayOf(Manifest.permission.CAMERA))
             }
         }
-
         ocrButton.setOnClickListener {
-            currentBitmap?.let { bitmap ->
-                performOcr(bitmap)
-            }
+            currentBitmap?.let { bitmap -> performOcr(bitmap) }
         }
-
         saveButton.setOnClickListener {
-            currentBitmap?.let { bitmap ->
-                saveImage(bitmap)
-            }
+            currentBitmap?.let { bitmap -> saveImage(bitmap) }
         }
     }
 
-    private fun checkCameraPermission(): Boolean {
-        return ContextCompat.checkSelfPermission(
-            this,
-            Manifest.permission.CAMERA
-        ) == PackageManager.PERMISSION_GRANTED
+    private fun hasCameraPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
+                PackageManager.PERMISSION_GRANTED
     }
 
-    private fun requestCameraPermission() {
-        permissionLauncher.launch(
-            arrayOf(
-                Manifest.permission.CAMERA,
-                Manifest.permission.WRITE_EXTERNAL_STORAGE,
-                Manifest.permission.READ_EXTERNAL_STORAGE
-            )
-        )
-    }
-
-    private fun launchScanner() {
+    private fun openCamera() {
         try {
-            // Using HMS ML Kit Document Scanner
-            val scanner = com.huawei.hms.mlplugin.documentdecognition.MLDocumentAnalyzerFactory
-                .getInstance()
-                .documentAnalyzer
+            // 创建临时文件接收全分辨率照片
+            val imagesDir = File(cacheDir, "images").apply { mkdirs() }
+            val photoFile = File(imagesDir, "scan_${System.currentTimeMillis()}.jpg")
+            val uri = FileProvider.getUriForFile(this, "com.huawei.docscanner.fileprovider", photoFile)
+            pendingPhotoUri = uri
 
-            val intent = Intent(this, scanner::class.java)
-            scannerLauncher.launch(intent)
+            val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+            intent.putExtra(MediaStore.EXTRA_OUTPUT, uri)
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            cameraLauncher.launch(intent)
+        } catch (e: ActivityNotFoundException) {
+            Toast.makeText(this, "未找到相机应用", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to launch scanner", e)
-            Toast.makeText(this, "扫描启动失败: ${e.message}", Toast.LENGTH_LONG).show()
+            Log.e(TAG, "相机启动失败", e)
+            Toast.makeText(this, "相机启动失败: ${e.message}", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    private fun loadBitmapFromUri(uri: Uri): Bitmap? {
+        // 读取全分辨率图片并按 8 倍缩放防止 OOM
+        val imageStream = contentResolver.openInputStream(uri) ?: return null
+        val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeStream(imageStream, null, opts)
+        imageStream.close()
+
+        val maxDim = 3000
+        var sampleSize = 1
+        while (opts.outWidth / sampleSize > maxDim || opts.outHeight / sampleSize > maxDim) {
+            sampleSize *= 2
+        }
+
+        val finalOpts = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+        val stream2 = contentResolver.openInputStream(uri) ?: return null
+        val bitmap = BitmapFactory.decodeStream(stream2, null, finalOpts)
+        stream2.close()
+        return bitmap
+    }
+
+    private fun processImage(bitmap: Bitmap) {
+        resultText.text = "正在校正文档..."
+        progressBar.visibility = View.VISIBLE
+        Thread {
+            val corrected = ScanProcessor.correctDocument(bitmap)
+            runOnUiThread {
+                progressBar.visibility = View.GONE
+                if (corrected != null) {
+                    currentBitmap = corrected
+                    imagePreview.setImageBitmap(corrected)
+                    imagePreview.visibility = View.VISIBLE
+                    ocrButton.visibility = View.VISIBLE
+                    saveButton.visibility = View.VISIBLE
+                    resultText.text = "扫描完成 ✓\n点击\u201C识别文字\u201D提取内容"
+                } else {
+                    currentBitmap = bitmap
+                    imagePreview.setImageBitmap(bitmap)
+                    imagePreview.visibility = View.VISIBLE
+                    ocrButton.visibility = View.VISIBLE
+                    saveButton.visibility = View.VISIBLE
+                    resultText.text = "未检测到文档边缘，已保留原图"
+                }
+            }
+        }.start()
     }
 
     private fun performOcr(bitmap: Bitmap) {
@@ -163,27 +196,19 @@ class MainActivity : AppCompatActivity() {
                 ocrButton.isEnabled = true
                 if (success) {
                     resultText.text = text ?: "未识别到文字"
-                    Toast.makeText(this, "识别完成", Toast.LENGTH_SHORT).show()
                 } else {
                     resultText.text = "识别失败，请重试"
-                    Toast.makeText(this, "文字识别失败", Toast.LENGTH_SHORT).show()
                 }
             }
         }
     }
 
     private fun saveImage(bitmap: Bitmap) {
-        try {
-            val fileName = "Scan_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}.jpg"
-            val savedPath = ImageUtil.saveBitmap(this, bitmap, fileName)
-            if (savedPath != null) {
-                Toast.makeText(this, "已保存到: $savedPath", Toast.LENGTH_LONG).show()
-            } else {
-                Toast.makeText(this, "保存失败", Toast.LENGTH_SHORT).show()
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Save failed", e)
-            Toast.makeText(this, "保存失败: ${e.message}", Toast.LENGTH_SHORT).show()
+        val savedPath = ImageUtil.saveBitmapToPictures(this, bitmap)
+        if (savedPath != null) {
+            Toast.makeText(this, "已保存到相册", Toast.LENGTH_LONG).show()
+        } else {
+            Toast.makeText(this, "保存失败", Toast.LENGTH_SHORT).show()
         }
     }
 }
