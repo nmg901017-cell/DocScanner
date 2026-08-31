@@ -73,23 +73,60 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
 
+        // 若上次崩溃，先用最简单的方式显示崩溃信息（不依赖布局，布局再崩也能看到）
+        val crashLog = readCrashLog()
+        if (crashLog != null) {
+            showCrashScreen(crashLog)
+            return
+        }
+
+        setContentView(R.layout.activity_main)
         initViews()
         setupListeners()
-
-        // 显示上次崩溃原因（如果有）
-        showLastCrashIfAny()
     }
 
-    private fun showLastCrashIfAny() {
-        val crashFile = File(filesDir, "crash_log.txt")
-        if (crashFile.exists()) {
-            val log = crashFile.readText()
-            if (log.isNotBlank()) {
-                resultText.text = "上次运行崩溃原因:\n$log"
+    private fun readCrashLog(): String? {
+        return try {
+            val crashFile = File(filesDir, "crash_log.txt")
+            if (crashFile.exists()) crashFile.readText() else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    // 程序化构建一个简单崩溃界面，彻底绕开布局资源
+    private fun showCrashScreen(crashLog: String) {
+        val content = android.widget.ScrollView(this)
+        content.setBackgroundColor(0xFFF5F5F5.toInt())
+
+        val container = android.widget.LinearLayout(this)
+        container.orientation = android.widget.LinearLayout.VERTICAL
+        container.setPadding(48, 80, 48, 48)
+
+        val title = TextView(this).apply {
+            text = "⚠️ 上次运行崩溃"
+            textSize = 22f
+            setTextColor(0xFFD32F2F.toInt())
+        }
+        val body = TextView(this).apply {
+            text = crashLog
+            textSize = 13f
+            setTextColor(0xFF333333.toInt())
+            setPadding(0, 24, 0, 24)
+        }
+        val btn = Button(this).apply {
+            text = "清除并继续"
+            setOnClickListener {
+                File(filesDir, "crash_log.txt").delete()
+                recreate()
             }
         }
+        container.addView(title)
+        container.addView(body)
+        container.addView(btn)
+        content.addView(container)
+        setContentView(content)
     }
 
     private fun initViews() {
