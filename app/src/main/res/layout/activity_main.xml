@@ -107,7 +107,6 @@
         android:textSize="18sp"
         android:textStyle="bold"
         android:backgroundTint="#007AFF"
-        app:background="@drawable/button_background"
         app:layout_constraintBottom_toTopOf="@id/btn_ocr"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
@@ -120,7 +119,8 @@
         android:text="🔤 识别文字"
         android:textSize="16sp"
         android:visibility="gone"
-        app:background="@drawable/button_secondary_background"
+        android:backgroundTint="#E8E8E8"
+        android:textColor="#333333"
         app:layout_constraintBottom_toTopOf="@id/btn_save"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
@@ -133,7 +133,8 @@
         android:text="💾 保存图片"
         android:textSize="16sp"
         android:visibility="gone"
-        app:background="@drawable/button_secondary_background"
+        android:backgroundTint="#E8E8E8"
+        android:textColor="#333333"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />

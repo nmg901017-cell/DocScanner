@@ -43,6 +43,10 @@ class MainActivity : AppCompatActivity() {
     private var pendingPhotoUri: Uri? = null
     private val TAG = "DocScanner"
 
+    companion object {
+        @Volatile var OpencvReady: Boolean = false
+    }
+
     private val cameraLauncher: ActivityResultLauncher<Intent> = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -79,9 +83,22 @@ class MainActivity : AppCompatActivity() {
         initViews()
         setupListeners()
 
-        if (!OpenCVLoader.initDebug()) {
-            Log.e(TAG, "OpenCV 初始化失败")
-            Toast.makeText(this, "OpenCV 初始化失败", Toast.LENGTH_LONG).show()
+        // 显示上次崩溃原因（如果有）
+        showLastCrashIfAny()
+
+        // 初始化 OpenCV（防御式：失败也不崩溃，扫描时降级为原图）
+        runCatching { OpenCVLoader.initDebug() }
+            .onSuccess { OpencvReady = true }
+            .onFailure { e -> Log.e(TAG, "OpenCV 初始化失败", e) }
+    }
+
+    private fun showLastCrashIfAny() {
+        val crashFile = File(filesDir, "crash_log.txt")
+        if (crashFile.exists()) {
+            val log = crashFile.readText()
+            if (log.isNotBlank()) {
+                resultText.text = "上次运行崩溃原因:\n$log"
+            }
         }
     }
 
@@ -163,7 +180,12 @@ class MainActivity : AppCompatActivity() {
         resultText.text = "正在校正文档..."
         progressBar.visibility = View.VISIBLE
         Thread {
-            val corrected = ScanProcessor.correctDocument(bitmap)
+            // OpenCV 可用则矫正，否则用原图（不崩溃）
+            val corrected = if (OpencvReady) {
+                ScanProcessor.correctDocument(bitmap)
+            } else {
+                null
+            }
             runOnUiThread {
                 progressBar.visibility = View.GONE
                 if (corrected != null) {
