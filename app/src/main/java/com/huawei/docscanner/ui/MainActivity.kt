@@ -18,9 +18,9 @@ import android.widget.ImageView
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.huawei.docscanner.R
@@ -29,7 +29,7 @@ import com.huawei.docscanner.util.OcrUtil
 import com.huawei.docscanner.util.ScanProcessor
 import java.io.File
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : ComponentActivity() {
 
     private lateinit var scanButton: Button
     private lateinit var imagePreview: ImageView
@@ -72,17 +72,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-
-        // 若上次崩溃，先显示崩溃信息（不依赖布局）
+        // 若上次崩溃，先显示崩溃信息（不依赖布局/主题）
         val crashLog = readCrashLog()
         if (crashLog != null) {
+            try { super.onCreate(savedInstanceState) } catch (e: Throwable) {}
             showCrashScreen(crashLog)
             return
         }
 
-        // 当场捕获：布局/初始化一旦崩溃，立刻用程序化界面显示错误
+        // 把所有初始化包进 try-catch，连 super.onCreate 都拦住
         try {
+            super.onCreate(savedInstanceState)
             setContentView(R.layout.activity_main)
             initViews()
             setupListeners()
