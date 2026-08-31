@@ -231,11 +231,14 @@ object ScanProcessor {
 
     /** 黑白二值 */
     private fun toBinary(bitmap: Bitmap): Bitmap {
-        val gray = grayPixels(bitmap)
-        // 计算均值做二值阈值
+        // 直接读取像素算平均灰度作二值阈值
+        val w = bitmap.width
+        val h = bitmap.height
+        val pixels = IntArray(w * h)
+        bitmap.getPixels(pixels, 0, w, 0, 0, w, h)
         var sum = 0L
-        gray.forEach { sum += it }
-        val mean = (sum / gray.size).toInt()
+        for (p in pixels) sum += (Color.red(p) + Color.green(p) + Color.blue(p)) / 3
+        val mean = (sum / pixels.size).toInt()
         return applyPixels(bitmap) { r, g, b ->
             val gv = (r + g + b) / 3
             if (gv >= mean) Color.WHITE else Color.BLACK
