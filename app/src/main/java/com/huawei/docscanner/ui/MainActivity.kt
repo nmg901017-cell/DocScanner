@@ -27,7 +27,6 @@ import com.huawei.docscanner.R
 import com.huawei.docscanner.util.ImageUtil
 import com.huawei.docscanner.util.OcrUtil
 import com.huawei.docscanner.util.ScanProcessor
-import org.opencv.android.OpenCVLoader
 import java.io.File
 
 class MainActivity : AppCompatActivity() {
@@ -42,10 +41,6 @@ class MainActivity : AppCompatActivity() {
     private var currentBitmap: Bitmap? = null
     private var pendingPhotoUri: Uri? = null
     private val TAG = "DocScanner"
-
-    companion object {
-        @Volatile var OpencvReady: Boolean = false
-    }
 
     private val cameraLauncher: ActivityResultLauncher<Intent> = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -85,11 +80,6 @@ class MainActivity : AppCompatActivity() {
 
         // 显示上次崩溃原因（如果有）
         showLastCrashIfAny()
-
-        // 初始化 OpenCV（防御式：失败也不崩溃，扫描时降级为原图）
-        runCatching { OpenCVLoader.initDebug() }
-            .onSuccess { OpencvReady = true }
-            .onFailure { e -> Log.e(TAG, "OpenCV 初始化失败", e) }
     }
 
     private fun showLastCrashIfAny() {
@@ -177,31 +167,27 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun processImage(bitmap: Bitmap) {
-        resultText.text = "正在校正文档..."
+        resultText.text = "正在处理文档..."
         progressBar.visibility = View.VISIBLE
         Thread {
-            // OpenCV 可用则矫正，否则用原图（不崩溃）
-            val corrected = if (OpencvReady) {
-                ScanProcessor.correctDocument(bitmap)
-            } else {
-                null
-            }
+            // 纯 Java 处理，绝不原生崩溃
+            val corrected = ScanProcessor.correctDocument(bitmap)
             runOnUiThread {
                 progressBar.visibility = View.GONE
-                if (corrected != null) {
+                if (corrected != bitmap) {
                     currentBitmap = corrected
                     imagePreview.setImageBitmap(corrected)
                     imagePreview.visibility = View.VISIBLE
                     ocrButton.visibility = View.VISIBLE
                     saveButton.visibility = View.VISIBLE
-                    resultText.text = "扫描完成 ✓\n点击\u201C识别文字\u201D提取内容"
+                    resultText.text = "处理完成 ✓\n点击\u201C识别文字\u201D提取内容"
                 } else {
                     currentBitmap = bitmap
                     imagePreview.setImageBitmap(bitmap)
                     imagePreview.visibility = View.VISIBLE
                     ocrButton.visibility = View.VISIBLE
                     saveButton.visibility = View.VISIBLE
-                    resultText.text = "未检测到文档边缘，已保留原图"
+                    resultText.text = "扫描完成 ✓\n点击\u201C识别文字\u201D提取内容"
                 }
             }
         }.start()

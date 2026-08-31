@@ -39,9 +39,6 @@ android {
 dependencies {
     // ===== 纯离线文档扫描方案 =====
 
-    // OpenCV - 文档边缘检测/透视矫正/图像增强 (Maven Central, 稳定)
-    implementation 'org.opencv:opencv:4.9.0'
-
     // Tesseract4Android - 离线 OCR 文字识别 (JitPack)
     implementation 'cz.adaptech.tesseract4android:tesseract4android:4.9.0'
 

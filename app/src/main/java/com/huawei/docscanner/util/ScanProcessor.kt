@@ -1,173 +1,205 @@
 package com.huawei.docscanner.util
 
 import android.graphics.Bitmap
+import android.graphics.Color
+import android.graphics.Rect
 import android.util.Log
-import org.opencv.android.Utils
-import org.opencv.core.*
-import org.opencv.imgproc.Imgproc
+import kotlin.math.max
+import kotlin.math.min
 
 /**
- * OpenCV 文档扫描处理器
- * 流程：灰度 -> 模糊 -> Canny边缘 -> 轮廓查找 -> 找最大四边形 -> 透视矫正 -> 增强
+ * 纯 Java 文档扫描处理器（无原生库依赖，不会原生崩溃）
+ * 流程：灰度 + 亮度投影自动裁剪（去掉深色边框）+ 对比度增强
  */
 object ScanProcessor {
 
     private const val TAG = "ScanProcessor"
 
     /**
-     * 校正文档：检测边缘、透视矫正并增强对比度
-     * @return 校正后的 Bitmap；若未检测到文档边缘返回 null
+     * 处理文档图片：自动裁剪到文档区域 + 增强对比度
+     * 返回处理后的 Bitmap（一定非空，不会抛出原生崩溃）
      */
-    fun correctDocument(bitmap: Bitmap): Bitmap? {
+    fun correctDocument(bitmap: Bitmap): Bitmap {
         return try {
-            // Bitmap -> Mat
-            val src = Mat()
-            Utils.bitmapToMat(bitmap, src)
-
-            // 转为灰度
-            val gray = Mat()
-            Imgproc.cvtColor(src, gray, Imgproc.COLOR_RGBA2GRAY)
-
-            // 高斯模糊减少噪声
-            val blurred = Mat()
-            Imgproc.GaussianBlur(gray, blurred, Size(5.0, 5.0), 0.0)
-
-            // Canny 边缘检测
-            val edges = Mat()
-            Imgproc.Canny(blurred, edges, 75.0, 200.0)
-
-            // 形态学膨胀，连接边缘
-            val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(5.0, 5.0))
-            Imgproc.dilate(edges, edges, kernel)
-
-            // 找轮廓
-            val contours = ArrayList<MatOfPoint>()
-            val hierarchy = Mat()
-            Imgproc.findContours(edges, contours, hierarchy, Imgproc.RETR_LIST, Imgproc.CHAIN_APPROX_SIMPLE)
-
-            // 找最大四边形（文档）
-            val docContour = findLargestQuad(contours)
-
-            if (docContour == null) {
-                Log.d(TAG, "未检测到文档边缘")
-                releaseMats(src, gray, blurred, edges, hierarchy)
-                return null
+            // 1. 缩小到处理工作尺寸（提升像素处理速度）
+            val scale = min(1.0, 1600.0 / max(bitmap.width, bitmap.height))
+            val work = if (scale < 1.0) {
+                Bitmap.createScaledBitmap(
+                    bitmap,
+                    (bitmap.width * scale).toInt(),
+                    (bitmap.height * scale).toInt(),
+                    true
+                )
+            } else {
+                bitmap
             }
 
-            // 透视矫正
-            val warped = warpPerspective(src, docContour)
-            releaseMats(src, gray, blurred, edges, hierarchy)
-
-            if (warped == null) {
-                Log.d(TAG, "透视变换失败")
-                return null
+            // 2. 转灰度
+            val w = work.width
+            val h = work.height
+            val pixels = IntArray(w * h)
+            work.getPixels(pixels, 0, w, 0, 0, w, h)
+            val gray = IntArray(pixels.size)
+            for (i in pixels.indices) {
+                val p = pixels[i]
+                gray[i] = (Color.red(p) + Color.green(p) + Color.blue(p)) / 3
             }
 
-            // 增强对比度（灰度 -> 自适应二值化，让文字更清晰）
-            val enhanced = enhance(warped)
-            releaseMat(warped)
+            // 3. 亮度投影找文档包围盒（去掉深色背景边框）
+            val bbox = findDocumentBox(gray, w, h)
 
-            // Mat -> Bitmap
-            val result = Bitmap.createBitmap(enhanced.cols(), enhanced.rows(), Bitmap.Config.ARGB_8888)
-            Utils.matToBitmap(enhanced, result)
-            releaseMat(enhanced)
+            // 4. 映射回原图尺寸并裁剪
+            val cropped = if (bbox != null && bbox.width() > 20 && bbox.height() > 20) {
+                val sx = bitmap.width.toFloat() / w
+                val sy = bitmap.height.toFloat() / h
+                val left = (bbox.left * sx).toInt().coerceIn(0, bitmap.width - 1)
+                val top = (bbox.top * sy).toInt().coerceIn(0, bitmap.height - 1)
+                val right = (bbox.right * sx).toInt().coerceIn(left + 1, bitmap.width)
+                val bottom = (bbox.bottom * sy).toInt().coerceIn(top + 1, bitmap.height)
+                try {
+                    Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
+                } catch (e: Exception) {
+                    bitmap
+                }
+            } else {
+                bitmap
+            }
 
-            result
+            // 5. 增强对比度
+            val enhanced = enhanceContrast(cropped)
+
+            // 释放中间位图（若非原图）
+            if (work !== bitmap) work.recycle()
+
+            enhanced
         } catch (e: Exception) {
-            Log.e(TAG, "文档校正失败", e)
-            null
+            Log.e(TAG, "文档处理失败，返回原图", e)
+            bitmap
         }
     }
 
     /**
-     * 在轮廓列表中找到面积最大的四边形
+     * 用行/列亮度投影找出文档区域（纸张通常是最亮的矩形）
      */
-    private fun findLargestQuad(contours: List<MatOfPoint>): MatOfPoint? {
-        var largest: MatOfPoint? = null
-        var maxArea = 0.0
+    private fun findDocumentBox(gray: IntArray, w: Int, h: Int): Rect? {
+        // 计算灰度均值作为阈值
+        var sum = 0L
+        for (g in gray) sum += g
+        val mean = (sum / gray.size).toInt()
+        val brightThreshold = max(mean, 100)
 
-        for (contour in contours) {
-            val area = Imgproc.contourArea(contour)
-            if (area < 10000.0) continue  // 忽略太小的轮廓
+        // 每行的亮点数
+        val rowBright = IntArray(h)
+        val colBright = IntArray(w)
+        for (y in 0 until h) {
+            var count = 0
+            val base = y * w
+            for (x in 0 until w) {
+                if (gray[base + x] >= brightThreshold) {
+                    count++
+                    colBright[x]++
+                }
+            }
+            rowBright[y] = count
+        }
 
-            val peri = Imgproc.arcLength(MatOfPoint2f(*contour.toArray()), true)
-            val approx = MatOfPoint2f()
-            Imgproc.approxPolyDP(MatOfPoint2f(*contour.toArray()), approx, 0.02 * peri, true)
+        // 找到主要亮度的连续行区间
+        val rowSpan = findLongestSpan(rowBright, (w * 0.3).toInt())
+        val colSpan = findLongestSpan(colBright, (h * 0.3).toInt())  // 阈值用列高
 
-            if (approx.total() == 4L && area > maxArea) {
-                maxArea = area
-                largest = MatOfPoint(*approx.toArray())
+        if (rowSpan == null || colSpan == null) return null
+
+        return Rect(colSpan.first, rowSpan.first, colSpan.second, rowSpan.second)
+    }
+
+    /**
+     * 在数组中找最长的连续连续段，其中值都 >= minCount
+     * 返回 [start, end)（start/end 为索引）
+     */
+    private fun findLongestSpan(arr: IntArray, minCount: Int): Pair<Int, Int>? {
+        var bestStart = -1
+        var bestEnd = -1
+        var curStart = -1
+        for (i in arr.indices) {
+            if (arr[i] >= minCount) {
+                if (curStart == -1) curStart = i
+            } else {
+                if (curStart != -1) {
+                    if (i - curStart > bestEnd - bestStart) {
+                        bestStart = curStart
+                        bestEnd = i
+                    }
+                    curStart = -1
+                }
             }
         }
-        return largest
+        if (curStart != -1 && arr.size - curStart > bestEnd - bestStart) {
+            bestStart = curStart
+            bestEnd = arr.size
+        }
+        if (bestStart == -1 || bestEnd - bestStart < 30) return null
+        return bestStart to bestEnd
     }
 
     /**
-     * 对检测到的四边形做透视矫正，得到正视图
+     * 对比度增强：直方图拉伸，让文字更清晰
      */
-    private fun warpPerspective(src: Mat, quad: MatOfPoint): Mat? {
-        val points = quad.toArray()
-        if (points.size != 4) return null
+    private fun enhanceContrast(bitmap: Bitmap): Bitmap {
+        // 缩小后再增强，避免大图像素处理卡顿
+        val scale = min(1.0, 1200.0 / max(bitmap.width, bitmap.height))
+        val src = if (scale < 1.0) {
+            Bitmap.createScaledBitmap(bitmap, (bitmap.width * scale).toInt(), (bitmap.height * scale).toInt(), true)
+        } else {
+            bitmap
+        }
 
-        // 排序并计算四边长度确定宽高
-        val tl = points.minByOrNull { it.x + it.y }!!
-        val br = points.maxByOrNull { it.x + it.y }!!
-        val tr = points.maxByOrNull { it.x - it.y }!!
-        val bl = points.minByOrNull { it.x - it.y }!!
+        val w = src.width
+        val h = src.height
+        val pixels = IntArray(w * h)
+        src.getPixels(pixels, 0, w, 0, 0, w, h)
 
-        val widthTop = dist(tl, tr)
-        val widthBottom = dist(bl, br)
-        val width = maxOf(widthTop, widthBottom)
+        // 计算灰度直方图
+        val hist = IntArray(256)
+        for (p in pixels) {
+            val g = (Color.red(p) + Color.green(p) + Color.blue(p)) / 3
+            hist[g]++
+        }
 
-        val heightLeft = dist(tl, bl)
-        val heightRight = dist(tr, br)
-        val height = maxOf(heightLeft, heightRight)
+        // 计算直方图拉伸的上下界（忽略头尾 1% 像素，防止极端值干扰）
+        var lo = 0
+        var hi = 255
+        val total = pixels.size
+        var acc = 0
+        for (i in 0..255) {
+            acc += hist[i]
+            if (acc > total / 200) { lo = i; break }
+        }
+        acc = 0
+        for (i in 255 downTo 0) {
+            acc += hist[i]
+            if (acc > total / 200) { hi = i; break }
+        }
+        if (hi - lo < 30) return bitmap  // 对比度已足够，无需处理
 
-        if (width < 50 || height < 50) return null
+        // 拉伸
+        val result = IntArray(pixels.size)
+        for (i in pixels.indices) {
+            val p = pixels[i]
+            val r = stretch(Color.red(p), lo, hi)
+            val g = stretch(Color.green(p), lo, hi)
+            val b = stretch(Color.blue(p), lo, hi)
+            result[i] = Color.rgb(r, g, b)
+        }
 
-        val resultTl = Point(0.0, 0.0)
-        val resultTr = Point(width - 1, 0.0)
-        val resultBr = Point(width - 1, height - 1)
-        val resultBl = Point(0.0, height - 1)
+        val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        out.setPixels(result, 0, w, 0, 0, w, h)
 
-        val srcMat = MatOfPoint2f(tl, tr, br, bl)
-        val destMat = MatOfPoint2f(resultTl, resultTr, resultBr, resultBl)
-
-        val transform = Imgproc.getPerspectiveTransform(srcMat, destMat)
-        val warped = Mat()
-        Imgproc.warpPerspective(src, warped, transform, Size(width, height))
-        return warped
+        if (src !== bitmap) src.recycle()
+        return out
     }
 
-    /**
-     * 增强：灰度 + 自适应阈值二值化，让文字清晰
-     */
-    private fun enhance(src: Mat): Mat {
-        val gray = Mat()
-        Imgproc.cvtColor(src, gray, Imgproc.COLOR_RGBA2GRAY)
-
-        // 自适应阈值二值化（更适合文档）
-        val binary = Mat()
-        Imgproc.adaptiveThreshold(
-            gray, binary, 255.0,
-            Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C,
-            Imgproc.THRESH_BINARY, 31, 15.0
-        )
-        releaseMat(gray)
-        return binary
-    }
-
-    private fun dist(p1: Point, p2: Point): Double {
-        val dx = p1.x - p2.x
-        val dy = p1.y - p2.y
-        return Math.sqrt(dx * dx + dy * dy)
-    }
-
-    private fun releaseMats(vararg mats: Mat) {
-        mats.forEach(::releaseMat)
-    }
-
-    private fun releaseMat(mat: Mat) {
-        runCatching { mat.release() }
+    private fun stretch(v: Int, lo: Int, hi: Int): Int {
+        val x = (v - lo) * 255 / (hi - lo)
+        return x.coerceIn(0, 255)
     }
 }
