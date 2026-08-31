@@ -1,0 +1,43 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.huawei.docscanner'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.huawei.docscanner"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    // Huawei HMS ML Kit - Document Scanner
+    implementation 'com.huawei.hms:mlkit-document-scanner:1.0.3.001'
+
+    // Huawei HMS ML Kit - Text Recognition (OCR)
+    implementation 'com.huawei.hms:mlkit-text-recognition:1.0.5.301'
+
+    // AndroidX
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.11.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    implementation 'androidx.activity:activity:1.8.2'
+    implementation 'androidx.lifecycle:lifecycle-runtime:2.7.0'
+}
