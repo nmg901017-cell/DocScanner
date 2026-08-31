@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -41,7 +42,7 @@
             android:paddingBottom="4dp" />
     </LinearLayout>
 
-    <!-- 主预览区 -->
+    <!-- 相机/预览区 -->
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
@@ -49,16 +50,58 @@
         android:layout_marginStart="16dp"
         android:layout_marginEnd="16dp"
         android:layout_marginBottom="10dp"
-        android:background="@drawable/preview_frame">
+        android:background="@drawable/preview_frame"
+        android:clipToOutline="true">
 
+        <!-- 相机预览（后摄） -->
+        <androidx.camera.view.PreviewView
+            android:id="@+id/preview_view"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="#1A1A1A"
+            android:visibility="gone" />
+
+        <!-- 文档引导框（居中，约 A4 比例） -->
+        <View
+            android:id="@+id/doc_guide"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:layout_marginStart="28dp"
+            android:layout_marginEnd="28dp"
+            android:layout_marginTop="40dp"
+            android:layout_marginBottom="64dp"
+            android:background="@drawable/doc_guide"
+            android:visibility="gone" />
+
+        <!-- 拍摄结果 -->
         <ImageView
             android:id="@+id/main_image"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:scaleType="fitCenter"
             android:padding="8dp"
-            android:contentDescription="扫描预览" />
+            android:contentDescription="扫描预览"
+            android:visibility="gone" />
 
+        <!-- 快门键 -->
+        <FrameLayout
+            android:id="@+id/capture_btn"
+            android:layout_width="72dp"
+            android:layout_height="72dp"
+            android:layout_gravity="bottom|center_horizontal"
+            android:layout_marginBottom="24dp"
+            android:background="@drawable/capture_btn_bg"
+            android:visibility="gone">
+
+            <ImageView
+                android:layout_width="52dp"
+                android:layout_height="52dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_capture"
+                android:contentDescription="拍摄" />
+        </FrameLayout>
+
+        <!-- 提示 -->
         <TextView
             android:id="@+id/hint"
             android:layout_width="wrap_content"
@@ -77,7 +120,6 @@
         android:layout_marginBottom="8dp"
         android:scrollbars="none"
         android:visibility="gone">
-
         <LinearLayout
             android:id="@+id/page_strip_inner"
             android:layout_width="wrap_content"
@@ -87,15 +129,15 @@
             android:paddingEnd="16dp" />
     </HorizontalScrollView>
 
-    <!-- 滤镜选择行 -->
+    <!-- 滤镜选择行（代码动态添加） -->
     <LinearLayout
         android:id="@+id/filter_row"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center"
-        android:paddingTop="8dp"
-        android:paddingBottom="8dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp"
         android:visibility="gone" />
 
     <ProgressBar
@@ -105,68 +147,124 @@
         android:layout_gravity="center_horizontal"
         android:visibility="gone" />
 
-    <!-- 底部操作栏 -->
+    <!-- 底部图标导航栏 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:gravity="center"
         android:paddingTop="8dp"
-        android:paddingBottom="20dp"
-        android:layout_marginHorizontal="12dp">
+        android:paddingBottom="16dp"
+        android:gravity="center">
 
-        <Button
-            android:id="@+id/btn_scan"
+        <!-- 扫描 -->
+        <LinearLayout
+            android:id="@+id/item_scan"
             android:layout_width="0dp"
-            android:layout_height="52dp"
+            android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:layout_marginEnd="6dp"
-            android:text="@string/scan"
-            android:textSize="15sp"
-            android:backgroundTint="@color/primary" />
+            android:orientation="vertical"
+            android:gravity="center">
+            <ImageView
+                android:layout_width="26dp"
+                android:layout_height="26dp"
+                android:src="@drawable/ic_scan"
+                android:tint="@color/primary"
+                android:contentDescription="扫描" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/scan"
+                android:textSize="12sp"
+                android:textColor="@color/primary" />
+        </LinearLayout>
 
-        <Button
-            android:id="@+id/btn_ocr"
+        <!-- 文字 -->
+        <LinearLayout
+            android:id="@+id/item_ocr"
             android:layout_width="0dp"
-            android:layout_height="52dp"
+            android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:layout_marginEnd="6dp"
-            android:text="@string/ocr"
-            android:textSize="15sp"
-            android:backgroundTint="@color/chip_bg"
-            android:textColor="@color/text_primary" />
+            android:orientation="vertical"
+            android:gravity="center">
+            <ImageView
+                android:layout_width="26dp"
+                android:layout_height="26dp"
+                android:src="@drawable/ic_ocr"
+                android:tint="@color/text_secondary"
+                android:contentDescription="文字" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/ocr"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary" />
+        </LinearLayout>
 
-        <Button
-            android:id="@+id/btn_save"
+        <!-- 保存 -->
+        <LinearLayout
+            android:id="@+id/item_save"
             android:layout_width="0dp"
-            android:layout_height="52dp"
+            android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:layout_marginEnd="6dp"
-            android:text="@string/save"
-            android:textSize="15sp"
-            android:backgroundTint="@color/chip_bg"
-            android:textColor="@color/text_primary" />
+            android:orientation="vertical"
+            android:gravity="center">
+            <ImageView
+                android:layout_width="26dp"
+                android:layout_height="26dp"
+                android:src="@drawable/ic_save"
+                android:tint="@color/text_secondary"
+                android:contentDescription="保存" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/save"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary" />
+        </LinearLayout>
 
-        <Button
-            android:id="@+id/btn_pdf"
+        <!-- PDF -->
+        <LinearLayout
+            android:id="@+id/item_pdf"
             android:layout_width="0dp"
-            android:layout_height="52dp"
+            android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:layout_marginEnd="6dp"
-            android:text="@string/pdf"
-            android:textSize="15sp"
-            android:backgroundTint="@color/chip_bg"
-            android:textColor="@color/text_primary" />
+            android:orientation="vertical"
+            android:gravity="center">
+            <ImageView
+                android:layout_width="26dp"
+                android:layout_height="26dp"
+                android:src="@drawable/ic_pdf"
+                android:tint="@color/text_secondary"
+                android:contentDescription="PDF" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/pdf"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary" />
+        </LinearLayout>
 
-        <Button
-            android:id="@+id/btn_share"
+        <!-- 分享 -->
+        <LinearLayout
+            android:id="@+id/item_share"
             android:layout_width="0dp"
-            android:layout_height="52dp"
+            android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="@string/share"
-            android:textSize="15sp"
-            android:backgroundTint="@color/chip_bg"
-            android:textColor="@color/text_primary" />
+            android:orientation="vertical"
+            android:gravity="center">
+            <ImageView
+                android:layout_width="26dp"
+                android:layout_height="26dp"
+                android:src="@drawable/ic_share"
+                android:tint="@color/text_secondary"
+                android:contentDescription="分享" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/share"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary" />
+        </LinearLayout>
     </LinearLayout>
 
 </LinearLayout>
