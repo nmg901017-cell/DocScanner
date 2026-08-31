@@ -74,16 +74,24 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // 若上次崩溃，先用最简单的方式显示崩溃信息（不依赖布局，布局再崩也能看到）
+        // 若上次崩溃，先显示崩溃信息（不依赖布局）
         val crashLog = readCrashLog()
         if (crashLog != null) {
             showCrashScreen(crashLog)
             return
         }
 
-        setContentView(R.layout.activity_main)
-        initViews()
-        setupListeners()
+        // 当场捕获：布局/初始化一旦崩溃，立刻用程序化界面显示错误
+        try {
+            setContentView(R.layout.activity_main)
+            initViews()
+            setupListeners()
+        } catch (e: Throwable) {
+            val sw = java.io.StringWriter()
+            e.printStackTrace(java.io.PrintWriter(sw))
+            File(filesDir, "crash_log.txt").writeText("onCreate 崩溃:\n" + e.toString() + "\n\n" + sw.toString())
+            showCrashScreen("onCreate 崩溃:\n" + e.toString() + "\n\n" + sw.toString())
+        }
     }
 
     private fun readCrashLog(): String? {
